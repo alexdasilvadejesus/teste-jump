@@ -1,0 +1,33 @@
+services:
+  jumpserver:
+    container_name: jms_all
+    build:
+      context: ./allinone
+      dockerfile: Dockerfile
+      args:
+        version: ${VERSION:-v5.0.0-ce}
+    image: jumpserver/jms_all:local
+    restart: unless-stopped
+    privileged: true
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - jsdata:/opt/data
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${SSH_PORT:-2222}:2222"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/health/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+volumes:
+  jsdata:
+    name: jsdata
+  pgdata:
+    name: pgdata

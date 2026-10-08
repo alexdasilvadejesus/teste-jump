@@ -1,0 +1,68 @@
+ARG version=v5.0.0-ce
+FROM ghcr.io/jumpserver/koko:${version} AS koko
+FROM ghcr.io/jumpserver/chen:${version} AS chen
+FROM ghcr.io/jumpserver/web:${version} AS web
+FROM ghcr.io/jumpserver/kael:${version} AS kael
+
+FROM ghcr.io/jumpserver/core:${version} AS core
+
+ARG TOOLS="                           \
+        bash-completion               \
+        curl                          \
+        vim                           \
+        procps                        \
+        net-tools                     \
+        sudo                          \
+        logrotate                     \
+        supervisor                    \
+        postgresql                    \
+        openjdk-21-jre-headless       \
+        redis                         \
+        wget"
+
+ARG APT_MIRROR=http://deb.debian.org
+# Core may use a private mirror; replace URI hosts while preserving repository paths.
+RUN sed -i -E "/^URIs:/s@https?://[^/[:space:]]+@${APT_MIRROR%/}@g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update -o APT::Update::Error-Mode=any \
+    && apt-get install -y --no-install-recommends ${TOOLS} \
+    && apt-get clean
+
+# Koko includes guacd and its runtime libraries.
+COPY --from=koko /opt /opt
+COPY --from=koko /usr /usr
+
+COPY --from=chen /opt /opt
+COPY --from=chen /usr /usr
+COPY --from=chen /etc/alternatives /etc/alternatives
+
+COPY --from=kael /opt /opt
+COPY --from=kael /usr /usr
+
+COPY --from=web /opt /opt
+COPY --from=web /usr /usr
+COPY --from=web /etc/nginx /etc/nginx
+COPY --from=web /docker-entrypoint.d /docker-entrypoint.d
+COPY --from=web /docker-entrypoint.sh /opt/web/entrypoint.sh
+RUN useradd nginx \
+    && mkdir -p /var/log/nginx \
+    && mkdir -p /var/cache/nginx 
+
+COPY supervisord.conf /etc/supervisor/conf.d/
+
+FROM debian:trixie-slim
+
+COPY --from=core / /
+
+VOLUME /opt/data
+VOLUME /opt/download
+VOLUME /var/log/nginx
+
+EXPOSE 80 2222
+ENV LC_ALL=C.UTF-8
+ENV ANSIBLE_DOCKER_ENABLED=false
+ENV KAEL_ENABLED=1
+
+WORKDIR /opt
+COPY entrypoint.sh .
+COPY service.sh .
+ENTRYPOINT ["./entrypoint.sh"]
